@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09" xmlns:xsi="http://w3.org">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>INT-CORP-2026-88</MsgId>
+      <CreDtTm>2026-10-03T09:15:30Z</CreDtTm>
+      <NbOfTxs>1</NbOfTxs>
+      <InitgPty>
+        <Nm>ACME GLOBAL MERCHANTS LTD</Nm>
+      </InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>PMT-INTL-77301</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <CdtTrfTxInf>
+        <Amt>
+          <InstdAmt Ccy="USD">142000.00</InstdAmt>
+        </Amt>
+        <Cdtr>
+          <Nm>PACIFIC LOGISTICS CORP</Nm>
+        </Cdtr>
+        <CdtrAcct>
+          <Id>
+            <Othr>
+              <Id>994820194820</Id>
+            </Othr>
+          </Id>
+        </CdtrAcct>
+      </CdtTrfTxInf>
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>
