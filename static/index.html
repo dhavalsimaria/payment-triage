@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Payment Triage Gateway</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { darkMode: 'class' };
+</script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-mono">
+  <header class="border-b border-slate-800 px-6 py-4">
+    <h1 class="text-xl font-bold tracking-tight">Payment File Triage Gateway</h1>
+    <p class="text-sm text-slate-400">PydanticAI ingestion &amp; routing &middot; TypeSafe Jev vs OpenAI fallback</p>
+  </header>
+
+  <main class="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+
+    <!-- File Ingestion Workspace -->
+    <section class="bg-slate-900 border border-slate-800 rounded-lg p-5 space-y-4">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">File Ingestion Workspace</h2>
+
+      <textarea id="payload" rows="12"
+        class="w-full bg-slate-950 border border-slate-700 rounded p-3 text-sm text-emerald-300 focus:outline-none focus:border-emerald-500"
+        placeholder="Paste raw payment file contents here..."></textarea>
+
+      <div class="flex flex-wrap gap-2">
+        <button data-mock="iso20022" class="mock-btn px-3 py-1.5 text-xs rounded bg-slate-800 hover:bg-slate-700 border border-slate-700">ISO 20022 (pain.001)</button>
+        <button data-mock="mt101" class="mock-btn px-3 py-1.5 text-xs rounded bg-slate-800 hover:bg-slate-700 border border-slate-700">SWIFT MT101</button>
+        <button data-mock="dtazv" class="mock-btn px-3 py-1.5 text-xs rounded bg-slate-800 hover:bg-slate-700 border border-slate-700">German DTAZV</button>
+      </div>
+
+      <div class="flex items-center gap-3 pt-2">
+        <label class="text-xs text-slate-400">Model</label>
+        <select id="backend" class="bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm">
+          <option value="jev">TypeSafe Jev (typesafe/jev-latest)</option>
+          <option value="openai_fallback">OpenAI Fallback (gpt-4o-mini)</option>
+        </select>
+        <button id="run" class="ml-auto px-4 py-1.5 text-sm font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950">
+          Run Triage
+        </button>
+      </div>
+
+      <div class="flex items-center justify-between bg-slate-950 border border-slate-800 rounded p-4">
+        <span class="text-xs uppercase text-slate-400">API Response Latency</span>
+        <span id="latency" class="text-3xl font-bold text-emerald-400">&mdash;</span>
+      </div>
+    </section>
+
+    <!-- Live Routing Logs -->
+    <section class="bg-slate-900 border border-slate-800 rounded-lg p-5 space-y-4">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Live Routing Log</h2>
+
+      <div id="status-line" class="text-sm text-slate-400">No triage run yet.</div>
+
+      <div id="deprecation-banner" class="hidden rounded border border-amber-500 bg-amber-500/10 text-amber-300 px-4 py-3 text-sm font-semibold">
+      </div>
+
+      <div id="hitl-banner" class="hidden rounded border border-red-600 bg-red-600/10 text-red-400 px-4 py-3 text-sm font-semibold">
+        &#9888; Awaiting Human Triage &mdash; routed to the Human Review Dead-Letter Queue
+      </div>
+
+      <div id="error-banner" class="hidden rounded border border-red-600 bg-red-600/10 text-red-400 px-4 py-3 text-sm font-semibold">
+      </div>
+
+      <div>
+        <div class="text-xs uppercase text-slate-500 mb-1">Execution Path</div>
+        <div id="exec-path" class="text-sm text-slate-200">&mdash;</div>
+      </div>
+
+      <div>
+        <div class="text-xs uppercase text-slate-500 mb-1">Raw Agent Response (JSON)</div>
+        <pre id="raw-json" class="bg-slate-950 border border-slate-800 rounded p-3 text-xs text-slate-300 overflow-x-auto max-h-64">&mdash;</pre>
+      </div>
+    </section>
+
+    <!-- HITL Management -->
+    <section class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-lg p-5 space-y-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Human Review Dead-Letter Queue</h2>
+      <table class="w-full text-sm">
+        <thead class="text-left text-slate-500 text-xs uppercase border-b border-slate-800">
+          <tr>
+            <th class="py-2 pr-4">ID</th>
+            <th class="py-2 pr-4">Received</th>
+            <th class="py-2 pr-4">Model</th>
+            <th class="py-2 pr-4">Format</th>
+            <th class="py-2 pr-4">Confidence</th>
+            <th class="py-2 pr-4">Payload Excerpt</th>
+          </tr>
+        </thead>
+        <tbody id="hitl-rows" class="divide-y divide-slate-800 text-slate-300">
+          <tr><td colspan="6" class="py-3 text-slate-500">Queue is empty.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+<script>
+const MOCKS = {
+  iso20022: `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.09">
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>MSG-20261003-0001</MsgId>
+      <CreDtTm>2026-10-03T09:15:00</CreDtTm>
+      <NbOfTxs>1</NbOfTxs>
+      <InitgPty><Nm>Acme Treasury GmbH</Nm></InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>PMT-0001</PmtInfId>
+      <PmtMtd>TRF</PmtMtd>
+      <ReqdExctnDt>2026-10-04</ReqdExctnDt>
+      <Dbtr><Nm>Acme Treasury GmbH</Nm></Dbtr>
+      <DbtrAcct><Id><IBAN>DE89370400440532013000</IBAN></Id></DbtrAcct>
+      <CdtTrfTxInf>
+        <Amt><InstdAmt Ccy="EUR">15000.00</InstdAmt></Amt>
+        <Cdtr><Nm>Beta Logistics SA</Nm></Cdtr>
+        <CdtrAcct><Id><IBAN>FR7630006000011234567890189</IBAN></Id></CdtrAcct>
+      </CdtTrfTxInf>
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>`,
+  mt101: `:20:REF20261003001
+:28D:1/1
+:50H:/DE89370400440532013000
+ACME TREASURY GMBH
+:30:261004
+:21:TXN0001
+:32B:EUR15000,00
+:59:/FR7630006000011234567890189
+BETA LOGISTICS SA
+:71A:SHA
+:72:/INS/TRANSFER PER CONTRACT 2026-114`,
+  dtazv: `DTAZV001ABSENDERNR0012345620261003
+FELD01ACME TREASURY GMBH
+FELD02DE89370400440532013000
+FELD03BETA LOGISTICS SA
+FELD04FR7630006000011234567890189
+FELD05EUR0000001500000
+FELD06ZAHLUNGSGRUND HANDELSWARE
+FELD07VERFALLDATUM20261004
+ENDE DATENSATZ`,
+};
+
+document.querySelectorAll('.mock-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('payload').value = MOCKS[btn.dataset.mock];
+  });
+});
+
+function hide(el) { el.classList.add('hidden'); }
+function show(el) { el.classList.remove('hidden'); }
+
+async function refreshHitl() {
+  const res = await fetch('/api/hitl');
+  const rows = await res.json();
+  const tbody = document.getElementById('hitl-rows');
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="py-3 text-slate-500">Queue is empty.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="py-2 pr-4">${r.id}</td>
+      <td class="py-2 pr-4">${new Date(r.received_at).toLocaleString()}</td>
+      <td class="py-2 pr-4">${r.model_used}</td>
+      <td class="py-2 pr-4">${r.format_type}</td>
+      <td class="py-2 pr-4">${(r.confidence_score * 100).toFixed(1)}%</td>
+      <td class="py-2 pr-4 text-slate-500">${r.payload_excerpt.slice(0, 60).replace(/</g,'&lt;')}&hellip;</td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('run').addEventListener('click', async () => {
+  const payload = document.getElementById('payload').value;
+  const backend = document.getElementById('backend').value;
+  const runBtn = document.getElementById('run');
+
+  hide(document.getElementById('deprecation-banner'));
+  hide(document.getElementById('hitl-banner'));
+  hide(document.getElementById('error-banner'));
+  document.getElementById('status-line').textContent = 'Running triage...';
+  runBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/triage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload, backend }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      document.getElementById('error-banner').textContent = `Error: ${data.detail || 'request failed'}`;
+      show(document.getElementById('error-banner'));
+      document.getElementById('status-line').textContent = 'Triage halted.';
+      document.getElementById('latency').textContent = '—';
+      return;
+    }
+
+    document.getElementById('latency').textContent = `${data.latency_ms.toFixed(0)} ms`;
+    document.getElementById('status-line').textContent =
+      `Model: ${data.model_used} · format=${data.format_type} · confidence=${(data.confidence_score * 100).toFixed(1)}%`;
+    document.getElementById('exec-path').textContent = `${data.routing_path.toUpperCase()} — ${data.message}`;
+    document.getElementById('raw-json').textContent = JSON.stringify(data, null, 2);
+
+    if (data.deprecation_warning) {
+      document.getElementById('deprecation-banner').textContent = `⚠ ${data.deprecation_message}`;
+      show(document.getElementById('deprecation-banner'));
+    }
+    if (data.hitl) {
+      show(document.getElementById('hitl-banner'));
+    }
+
+    await refreshHitl();
+  } catch (err) {
+    document.getElementById('error-banner').textContent = `Error: ${err.message}`;
+    show(document.getElementById('error-banner'));
+  } finally {
+    runBtn.disabled = false;
+  }
+});
+
+refreshHitl();
+</script>
+</body>
+</html>
